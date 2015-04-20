@@ -1,4 +1,4 @@
-# Custom Dolphin Build that adds some features specifically intended to be used with Twilight Princess and Wind Waker (GCN)!
+# Custom Dolphin Build by Dragonbane
 
 See Dolphin Project:
 
