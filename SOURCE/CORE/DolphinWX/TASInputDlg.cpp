@@ -22,8 +22,19 @@
 #include <wx/window.h>
 #include <wx/windowid.h>
 
+#include <wx/app.h>
+#include "Core/Core.h"
+#include "Core/CoreParameter.h"
+#include "Core/Boot/Boot.h"
+#include "DolphinWX/Frame.h"
+#include "DolphinWX/Globals.h"
+#include "DolphinWX/Main.h"
+#include "Core/HW/ProcessorInterface.h"
+#include "Core/HW/Memmap.h"
+
 #include "Common/CommonTypes.h"
 #include "Core/Movie.h"
+#include "Core/State.h"
 #include "Core/HW/Wiimote.h"
 #include "Core/HW/WiimoteEmu/WiimoteEmu.h"
 #include "Core/HW/WiimoteEmu/Attachment/Nunchuk.h"
@@ -44,7 +55,7 @@ void TASInputDlg::CreateBaseLayout()
 {
 	for (unsigned int i = 0; i < 10; ++i)
 		m_controls[i] = nullptr;
-	for (unsigned int i = 0; i < 14; ++i)
+	for (unsigned int i = 0; i < 18; ++i) //Original: 17
 		m_buttons[i] = nullptr;
 
 	m_buttons[0] = &m_dpad_down;
@@ -203,6 +214,13 @@ void TASInputDlg::CreateGCLayout()
 	m_buttons[10] = &m_r;
 	m_buttons[11] = &m_start;
 
+	//Dragonbane: Special
+	m_buttons[14] = &m_reset;
+	m_buttons[15] = &m_quickspin;
+	m_buttons[16] = &m_rollassist;
+	m_buttons[17] = &m_skipDialog;
+
+
 	m_controls[2] = &m_c_stick.x_cont;
 	m_controls[3] = &m_c_stick.y_cont;
 	m_controls[4] = &m_l_cont;
@@ -240,7 +258,7 @@ void TASInputDlg::CreateGCLayout()
 	m_z = CreateButton("Z");
 	m_start = CreateButton("Start");
 
-	for (unsigned int i = 4; i < 14; ++i)
+	for (unsigned int i = 4; i < 14; ++i) //17
 		if (m_buttons[i] != nullptr)
 			m_buttons_grid->Add(m_buttons[i]->checkbox, false);
 	m_buttons_grid->AddSpacer(5);
@@ -248,12 +266,37 @@ void TASInputDlg::CreateGCLayout()
 	m_buttons_box->Add(m_buttons_grid);
 	m_buttons_box->Add(m_buttons_dpad);
 
+
+
+	//Dragonbane: Special Box
+	wxStaticBoxSizer* const m_buttons_extra = new wxStaticBoxSizer(wxVERTICAL, this, _("Extras"));
+	wxGridSizer* const m_buttons_grid_extra = new wxGridSizer(1);
+
+	m_reset = CreateButton("Reset");
+	m_quickspin = CreateButton("Quick Spin");
+	m_rollassist = CreateButton("Auto Roll");
+	m_skipDialog = CreateButton("Auto Dialog");
+
+	m_rollassist.checkbox->Bind(wxEVT_CHECKBOX, &TASInputDlg::UpdateFromButtons, this);
+
+	for (unsigned int i = 14; i < 18; ++i)
+		if (m_buttons[i] != nullptr)
+			m_buttons_grid_extra->Add(m_buttons[i]->checkbox, false);
+	m_buttons_grid_extra->AddSpacer(5);
+
+	m_buttons_extra->Add(m_buttons_grid_extra);
+
+
 	wxBoxSizer* const main_szr = new wxBoxSizer(wxVERTICAL);
 
 	top_box->Add(main_box, 0, wxALL, 5);
 	top_box->Add(c_box, 0, wxTOP | wxRIGHT, 5);
 	bottom_box->Add(shoulder_box, 0, wxLEFT | wxRIGHT, 5);
 	bottom_box->Add(m_buttons_box, 0, wxBOTTOM, 5);
+
+	//Dragonban
+	bottom_box->Add(m_buttons_extra, 0, wxLEFT | wxRIGHT | wxBOTTOM, 5);
+
 	main_szr->Add(top_box);
 	main_szr->Add(bottom_box);
 	SetSizerAndFit(main_szr);
@@ -615,12 +658,203 @@ void TASInputDlg::GetValues(GCPadStatus* PadStatus)
 	//TODO:: Make this instant not when polled.
 	GetKeyBoardInput(PadStatus);
 
+	//Dragonbane: Functions
+	if (Core::IsRunningAndStarted())
+	{
+		std::string gameID = SConfig::GetInstance().m_LocalCoreStartupParameter.GetUniqueID();
+		u32 isLoadingAdd;
+		u32 eventFlagAdd;
+		bool isTP = false;
+
+		if (!gameID.compare("GZ2E01"))
+		{
+			eventFlagAdd = 0x40b16d;
+			isLoadingAdd = 0x450ce0;
+
+			isTP = true;
+		}
+		else if (!gameID.compare("GZ2P01"))
+		{
+			eventFlagAdd = 0x40d10d;
+			isLoadingAdd = 0x452ca0;
+
+			isTP = true;
+		}
+
+		//Reset button
+		if (m_reset.checkbox->IsChecked())
+		{
+			m_reset.checkbox->SetValue(false);
+
+			if (Movie::IsRecordingInput())
+				Movie::g_bReset = true;
+
+			ProcessorInterface::ResetButton_Tap();
+		}
+
+		//Auto Dialog
+		if (m_skipDialog.checkbox->IsChecked())
+		{
+			if (!auto_dialog)
+			{
+				dialog_timer = Movie::g_currentFrame;
+				auto_dialog = true;
+			}
+
+			if (dialog_timer + 2 == Movie::g_currentFrame)
+			{
+				dialog_timer = Movie::g_currentFrame;
+			}
+
+			if (dialog_timer + 1 == Movie::g_currentFrame)
+			{
+				m_b.checkbox->SetValue(false);
+				m_a.checkbox->SetValue(true);
+			}
+
+			if (dialog_timer == Movie::g_currentFrame)
+			{
+				m_b.checkbox->SetValue(true);
+				m_a.checkbox->SetValue(false);
+			}
+		}
+		else
+		{
+			auto_dialog = false;
+		}
+
+		//Quickspin
+		if (m_quickspin.checkbox->IsChecked())
+		{
+			m_main_stick.x_cont.text->SetValue(std::to_string(194));
+			m_main_stick.y_cont.text->SetValue(std::to_string(191));
+
+			quickspin_enabled = true;
+			quickspin_timer = Movie::g_currentFrame;
+			m_quickspin.checkbox->SetValue(false);
+		}
+		else if (quickspin_enabled)
+		{
+			if (Movie::g_currentFrame == quickspin_timer + 1)
+			{
+				m_main_stick.x_cont.text->SetValue(std::to_string(208));
+				m_main_stick.y_cont.text->SetValue(std::to_string(81));
+			}
+			else if (Movie::g_currentFrame == quickspin_timer + 2)
+			{
+				m_main_stick.x_cont.text->SetValue(std::to_string(122));
+				m_main_stick.y_cont.text->SetValue(std::to_string(31));
+			}
+			else if (Movie::g_currentFrame == quickspin_timer + 3)
+			{
+				m_main_stick.x_cont.text->SetValue(std::to_string(50));
+				m_main_stick.y_cont.text->SetValue(std::to_string(89));
+			}
+			else if (Movie::g_currentFrame == quickspin_timer + 4)
+			{
+				m_main_stick.x_cont.text->SetValue(std::to_string(76));
+				m_main_stick.y_cont.text->SetValue(std::to_string(193));
+			}
+			else if (Movie::g_currentFrame == quickspin_timer + 5)
+			{
+				m_main_stick.x_cont.text->SetValue(std::to_string(198));
+				m_main_stick.y_cont.text->SetValue(std::to_string(185));
+				m_b.checkbox->SetValue(true);
+			}
+			else if (Movie::g_currentFrame == quickspin_timer + 6)
+			{
+				m_main_stick.x_cont.text->SetValue(std::to_string(128));
+				m_main_stick.y_cont.text->SetValue(std::to_string(128));
+				m_b.checkbox->SetValue(false);
+
+				quickspin_enabled = false;
+			}
+		}
+
+		//Roll Assist
+		if (Movie::checkSave)
+		{
+			m_rollassist.checkbox->SetValue(true);
+			Movie::checkSave = false;
+			Movie::uncheckSave = false;
+		}
+		else if (Movie::uncheckSave)
+		{
+			m_rollassist.checkbox->SetValue(false);
+			Movie::checkSave = false;
+			Movie::uncheckSave = false;
+		}
+
+		if (m_rollassist.checkbox->IsChecked() && !Movie::roll_enabled)
+		{
+			Movie::roll_enabled = true;
+			Movie::first_roll = true;
+			Movie::roll_timer = Movie::g_currentFrame;
+		}
+		if (!m_rollassist.checkbox->IsChecked())
+		{
+			Movie::roll_enabled = false;
+		}
+		if (Movie::roll_enabled)
+		{
+			if (Movie::roll_timer == -1)
+				Movie::roll_timer = Movie::g_currentFrame;
+
+			if (isTP)
+			{
+				u8 eventFlag = Memory::Read_U8(eventFlagAdd);
+				u32 isLoading = Memory::Read_U32(isLoadingAdd);
+
+				if (eventFlag == 1 || isLoading > 0 || m_main_stick.x_cont.value == 128 && m_main_stick.y_cont.value == 128) //Reset rolling during loading or cutscenes
+				{
+					Movie::first_roll = true;
+					Movie::roll_timer = Movie::g_currentFrame + 1;
+					m_a.checkbox->SetValue(false);
+				}
+			}
+			if (Movie::first_roll)
+			{
+				if (Movie::g_currentFrame == Movie::roll_timer)
+				{
+					m_a.checkbox->SetValue(true);
+				}
+				else if (Movie::g_currentFrame == Movie::roll_timer + 1)
+				{
+					m_a.checkbox->SetValue(false);
+				}
+				else if (Movie::g_currentFrame == Movie::roll_timer + 23) //22 would be ideal, but terrain...
+				{
+					m_a.checkbox->SetValue(true);
+				}
+				else if (Movie::g_currentFrame == Movie::roll_timer + 24)
+				{
+					m_a.checkbox->SetValue(false);
+					Movie::first_roll = false;
+					Movie::roll_timer = Movie::g_currentFrame - 1;
+				}
+			}
+			else
+			{
+				if (Movie::g_currentFrame == Movie::roll_timer + 20) //19 would be ideal, but terrain...
+				{
+					m_a.checkbox->SetValue(true);
+				}
+				else if (Movie::g_currentFrame == Movie::roll_timer + 21)
+				{
+					m_a.checkbox->SetValue(false);
+					Movie::roll_timer = Movie::g_currentFrame - 1;
+				}
+			}
+
+		}
+	}
+
 	PadStatus->stickX = m_main_stick.x_cont.value;
 	PadStatus->stickY = m_main_stick.y_cont.value;
 	PadStatus->substickX = m_c_stick.x_cont.value;
 	PadStatus->substickY = m_c_stick.y_cont.value;
-	PadStatus->triggerLeft = m_l.checkbox->GetValue() ? 255 : m_l_cont.slider->GetValue();
-	PadStatus->triggerRight = m_r.checkbox->GetValue() ? 255 : m_r_cont.slider->GetValue();
+	PadStatus->triggerLeft = m_l.checkbox->GetValue() ? 255 : m_l_cont.value; //m_l_cont.slider->GetValue();
+	PadStatus->triggerRight = m_r.checkbox->GetValue() ? 255 : m_r_cont.value; //m_r_cont.slider->GetValue();
 
 	for (unsigned int i = 0; i < 14; ++i)
 	{
@@ -871,4 +1105,44 @@ wxBitmap TASInputDlg::CreateStickBitmap(int x, int y)
 	memDC.DrawCircle(x, y, 5);
 	memDC.SelectObject(wxNullBitmap);
 	return bitmap;
+}
+
+//Dragonbane
+void TASInputDlg::UpdateExtraButtons(bool check, bool uncheck)
+{
+	if (m_rollassist.checkbox && m_has_layout && !Movie::IsPlayingInput())
+	{
+		if (check)
+		{
+			m_rollassist.checkbox->SetValue(true);
+		}
+		else if (uncheck)
+		{
+			m_rollassist.checkbox->SetValue(false);
+		}
+	}
+}
+
+void TASInputDlg::UpdateFromButtons(wxCommandEvent& event)
+{
+	if (m_rollassist.checkbox && m_has_layout && !Movie::IsPlayingInput())
+	{
+		if (m_rollassist.checkbox->IsChecked() && !Movie::roll_enabled)
+		{
+			Movie::roll_enabled = true;
+			Movie::first_roll = true;
+			Movie::roll_timer = -1;
+		}
+		if (!m_rollassist.checkbox->IsChecked())
+		{
+			Movie::roll_enabled = false;
+		}
+	}
+	else
+	{
+		Movie::roll_enabled = false;
+	}
+
+	Movie::checkSave = false;
+	Movie::uncheckSave = false;
 }

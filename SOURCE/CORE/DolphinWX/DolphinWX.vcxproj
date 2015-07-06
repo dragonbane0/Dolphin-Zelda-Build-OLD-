@@ -104,6 +104,7 @@
     <ClCompile Include="TASInputDlg.cpp" />
     <ClCompile Include="TPLoadManager.cpp" />
     <ClCompile Include="TPSavefileManager.cpp" />
+    <ClCompile Include="TPVideoComparison.cpp" />
     <ClCompile Include="VideoConfigDiag.cpp" />
     <ClCompile Include="PostProcessingConfigDiag.cpp" />
     <ClCompile Include="ControllerConfigDiag.cpp" />
@@ -154,6 +155,7 @@
     <ClInclude Include="TASInputDlg.h" />
     <ClInclude Include="TPLoadManager.h" />
     <ClInclude Include="TPSavefileManager.h" />
+    <ClInclude Include="TPVideoComparison.h" />
     <ClInclude Include="VideoConfigDiag.h" />
     <ClInclude Include="PostProcessingConfigDiag.h" />
     <ClInclude Include="ControllerConfigDiag.h" />

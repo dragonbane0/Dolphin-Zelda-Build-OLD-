@@ -247,6 +247,8 @@ void HotkeyConfigDialog::CreateHotkeyGUIControls()
 		_("Decrease Convergence"),
 		_("Increase Convergence"),
 
+		_("Auto Verify Recording"), //Dragonbane
+
 		_("Load State Slot 1"),
 		_("Load State Slot 2"),
 		_("Load State Slot 3"),

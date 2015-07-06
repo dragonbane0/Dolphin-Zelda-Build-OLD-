@@ -91,6 +91,8 @@ static const struct
 	{ "DecreaseConvergence", 0,                   0 /* wxMOD_NONE */ },
 	{ "IncreaseConvergence", 0,                   0 /* wxMOD_NONE */ },
 
+	{ "AutoVerifyRecording", 0,					  0 /* wxMOD_NONE */ }, //Dragonbane
+
 	{ "LoadStateSlot1",      340 /* WXK_F1 */,    0 /* wxMOD_NONE */ },
 	{ "LoadStateSlot2",      341 /* WXK_F2 */,    0 /* wxMOD_NONE */ },
 	{ "LoadStateSlot3",      342 /* WXK_F3 */,    0 /* wxMOD_NONE */ },

@@ -69,6 +69,7 @@
 //Dragonbane
 #include "DolphinWX/TPSavefileManager.h"
 #include "DolphinWX/TPLoadManager.h"
+#include "DolphinWX/TPVideoComparison.h"
 
 // Resources
 
@@ -256,9 +257,15 @@ EVT_MENU(IDM_PLAY, CFrame::OnPlay)
 EVT_MENU(IDM_STOP, CFrame::OnStop)
 EVT_MENU(IDM_RESET, CFrame::OnReset)
 EVT_MENU(IDM_RECORD, CFrame::OnRecord)
+EVT_MENU(IDM_RECORD_STOP, CFrame::OnStopRecord) //Dragonbane
 EVT_MENU(IDM_PLAY_RECORD, CFrame::OnPlayRecording)
 EVT_MENU(IDM_RECORD_EXPORT, CFrame::OnRecordExport)
 EVT_MENU(IDM_RECORD_READ_ONLY, CFrame::OnRecordReadOnly)
+
+//Dragonbane
+EVT_MENU(IDM_VERIFY_RECORD, CFrame::OnRecordVerify)
+
+
 EVT_MENU(IDM_TAS_INPUT, CFrame::OnTASInput)
 EVT_MENU(IDM_TOGGLE_PAUSE_MOVIE, CFrame::OnTogglePauseMovie)
 EVT_MENU(IDM_SHOW_LAG, CFrame::OnShowLag)
@@ -268,6 +275,7 @@ EVT_MENU(IDM_FRAMESTEP, CFrame::OnFrameStep)
 EVT_MENU(IDM_SCREENSHOT, CFrame::OnScreenshot)
 EVT_MENU(IDM_TOGGLE_DUMP_FRAMES, CFrame::OnToggleDumpFrames)
 EVT_MENU(IDM_TOGGLE_DUMP_AUDIO, CFrame::OnToggleDumpAudio)
+EVT_MENU(IDM_DUMP_PATH, CFrame::OnSetDumpPath)
 EVT_MENU(wxID_PREFERENCES, CFrame::OnConfigMain)
 EVT_MENU(IDM_CONFIG_GFX_BACKEND, CFrame::OnConfigGFX)
 EVT_MENU(IDM_CONFIG_AUDIO, CFrame::OnConfigAudio)
@@ -290,6 +298,7 @@ EVT_MENU(IDM_BROWSE, CFrame::OnBrowse)
 EVT_MENU(IDM_MEMCARD, CFrame::OnMemcard)
 EVT_MENU(IDM_TPSAVE, CFrame::OnTPSave) //Dragonbane
 EVT_MENU(IDM_TPLOAD, CFrame::OnTPLoad) //Dragonbane
+EVT_MENU(IDM_TPCOMPARE, CFrame::OnTPVideoComparison) //Dragonbane
 EVT_MENU(IDM_IMPORT_SAVE, CFrame::OnImportSave)
 EVT_MENU(IDM_EXPORT_ALL_SAVE, CFrame::OnExportAllSaves)
 EVT_MENU(IDM_CHEATS, CFrame::OnShow_CheatsWindow)
@@ -438,6 +447,7 @@ CFrame::CFrame(wxFrame* parent,
 	//Dragonbane
 	g_TPSaveFileManager = new TPSavefileManager(this);
 	g_TPLoadManager = new TPLoadManager(this);
+	g_TPVideoComparison = new TPVideoComparison(this);
 	
 
 	for (int i = 0; i < 8; ++i)
@@ -1036,13 +1046,15 @@ void OnStoppedCallback()
 
 void GCTASManipFunction(GCPadStatus* PadStatus, int controllerID)
 {
-	if (main_frame)
+	if (main_frame) //&& !State::IsStateOperationInProgress()) //Dragonbane: Freeze protection
+	{
 		main_frame->g_TASInputDlg[controllerID]->GetValues(PadStatus);
+	}
 }
 
 void WiiTASManipFunction(u8* data, WiimoteEmu::ReportFeatures rptf, int controllerID, int ext, const wiimote_key key)
 {
-	if (main_frame)
+	if (main_frame)  //&& !State::IsStateOperationInProgress()) //Dragonbane: Freeze protection
 	{
 		main_frame->g_TASInputDlg[controllerID + 4]->GetValues(data, rptf, ext, key);
 	}
@@ -1062,7 +1074,7 @@ bool TASInputHasFocus()
 void CFrame::OnKeyDown(wxKeyEvent& event)
 {
 	if (Core::GetState() != Core::CORE_UNINITIALIZED &&
-	    (RendererHasFocus() || TASInputHasFocus()))
+		(RendererHasFocus() || TASInputHasFocus()))
 	{
 		int WiimoteId = -1;
 		// Toggle fullscreen
@@ -1172,12 +1184,16 @@ void CFrame::OnKeyDown(wxKeyEvent& event)
 			if (++g_Config.iStereoConvergence > 500)
 				g_Config.iStereoConvergence = 500;
 		}
-
+		else if (IsHotkey(event, HK_AUTO_VERIFY)) //Dragonbane
+		{
+			if (Movie::AutoVerify() && !Core::IsRunningAndStarted())
+				BootGame("");
+		}
 		else
 		{
 			for (int i = HK_SELECT_STATE_SLOT_1; i < HK_SELECT_STATE_SLOT_10; ++i)
 			{
-				if (IsHotkey (event, i))
+				if (IsHotkey(event, i))
 				{
 					wxCommandEvent slot_event;
 					slot_event.SetId(i + IDM_SELECT_SLOT_1 - HK_SELECT_STATE_SLOT_1);

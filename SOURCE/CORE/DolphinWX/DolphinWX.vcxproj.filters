@@ -172,6 +172,9 @@
     <ClCompile Include="TPLoadManager.cpp">
       <Filter>GUI</Filter>
     </ClCompile>
+    <ClCompile Include="TPVideoComparison.cpp">
+      <Filter>GUI</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Main.h" />
@@ -310,6 +313,9 @@
       <Filter>GUI</Filter>
     </ClInclude>
     <ClInclude Include="TPLoadManager.h">
+      <Filter>GUI</Filter>
+    </ClInclude>
+    <ClInclude Include="TPVideoComparison.h">
       <Filter>GUI</Filter>
     </ClInclude>
   </ItemGroup>

@@ -154,7 +154,7 @@ bool CMemcardManager::LoadSettings()
 		iniMemcardSection->Get("Items per page",  &itemsPerPage, 16);
 		iniMemcardSection->Get("DefaultMemcardA", &(DefaultMemcard[SLOT_A]), "");
 		iniMemcardSection->Get("DefaultMemcardB", &(DefaultMemcard[SLOT_B]), "");
-		iniMemcardSection->Get("DefaultIOFolder", &DefaultIOPath, "/Users/GC");
+		iniMemcardSection->Get("DefaultIOFolder", &DefaultIOPath, File::GetUserPath(D_GCUSER_IDX));
 
 		iniMemcardSection->Get("Use Pages", &mcmSettings.usePages, true);
 		iniMemcardSection->Get("cBanner", &mcmSettings.column[COLUMN_BANNER], true);
@@ -182,6 +182,7 @@ bool CMemcardManager::SaveSettings()
 	iniMemcardSection->Set("Items per page",  itemsPerPage, 16);
 	iniMemcardSection->Set("DefaultMemcardA", DefaultMemcard[SLOT_A], "");
 	iniMemcardSection->Set("DefaultMemcardB", DefaultMemcard[SLOT_B], "");
+	iniMemcardSection->Set("DefaultIOFolder", DefaultIOPath); //Dragonbane: Save it
 
 	iniMemcardSection->Set("Use Pages", mcmSettings.usePages, true);
 	iniMemcardSection->Set("cBanner", mcmSettings.column[COLUMN_BANNER], true);
@@ -288,6 +289,7 @@ void CMemcardManager::CreateGUIControls()
 void CMemcardManager::OnPathChange(wxFileDirPickerEvent& event)
 {
 	ChangePath(event.GetId() - ID_MEMCARDPATH_A);
+	DefaultMemcard[event.GetId() - ID_MEMCARDPATH_A] = WxStrToStr(m_MemcardPath[event.GetId() - ID_MEMCARDPATH_A]->GetPath());
 }
 
 void CMemcardManager::ChangePath(int slot)
@@ -324,7 +326,7 @@ void CMemcardManager::ChangePath(int slot)
 				memoryCard[slot] = nullptr;
 			}
 			mcmSettings.twoCardsLoaded = false;
-			m_MemcardPath[slot]->SetPath(wxEmptyString);
+			//m_MemcardPath[slot]->SetPath(wxEmptyString);
 			m_MemcardList[slot]->ClearAll();
 			t_Status[slot]->SetLabel(wxEmptyString);
 			m_SaveImport[slot]->Disable();
@@ -534,10 +536,9 @@ void CMemcardManager::CopyDeleteClick(wxCommandEvent& event)
 	case ID_SAVEIMPORT_B:
 	{
 		wxString fileName = wxFileSelector(
+
 			_("Select a save file to import"),
-			(strcmp(DefaultIOPath.c_str(), "/Users/GC") == 0)
-				? StrToWxStr("")
-				: StrToWxStr(DefaultIOPath),
+			StrToWxStr(DefaultIOPath),
 			wxEmptyString, wxEmptyString,
 			_("GameCube Savegame files(*.gci;*.gcs;*.sav)") + wxString("|*.gci;*.gcs;*.sav|") +
 			_("Native GCI files(*.gci)") + wxString("|*.gci|") +
@@ -559,6 +560,12 @@ void CMemcardManager::CopyDeleteClick(wxCommandEvent& event)
 		if (fileName.length() > 0)
 		{
 			CopyDeleteSwitch(memoryCard[slot]->ImportGci(WxStrToStr(fileName), fileName2), slot);
+
+			//Save new Path
+			std::string file, legalPathname, extension;
+			SplitPathEscapeChar(WxStrToStr(fileName), &legalPathname, &file, &extension);
+
+			DefaultIOPath = legalPathname;
 		}
 	}
 	break;

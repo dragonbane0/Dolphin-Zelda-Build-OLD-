@@ -33,6 +33,9 @@
 #include "InputCommon/GCPadStatus.h"
 #include "VideoCommon/VideoConfig.h"
 
+//Dragonbane
+#include "Core/Host.h"
+
 // The chunk to allocate movie data in multiples of.
 #define DTM_BASE_LENGTH (1024)
 
@@ -48,6 +51,53 @@ static PlayMode s_playMode = MODE_NONE;
 
 static u32 s_framesToSkip = 0, s_frameSkipCounter = 0;
 
+//Dragonbane
+//static u8* tmpDynamicRange = nullptr;
+bool badSettings = false;
+bool lagWarning = false;
+bool isVerifying = false;
+bool isAutoVerifying = false;
+bool autoSave = false;
+int desyncCount = 0;
+bool justStoppedRecording = false;
+
+static bool saveMemCard = false;
+
+static std::string autoVerifyMovieFilename = File::GetUserPath(D_STATESAVES_IDX) + "AutoVerify.dtm";
+static std::string autoVerifyStateFilename = File::GetUserPath(D_STATESAVES_IDX) + "AutoVerify.sav";
+static std::string lastMovie = "";
+
+//Dragonbane: Auto Roll Stuff
+int roll_timer = 0;
+bool roll_enabled = false;
+bool first_roll = false;
+bool checkSave = false;
+bool uncheckSave = false;
+
+
+//Dragonbane: Video Comparison Stuff
+bool cmp_requested = false;
+bool cmp_isRunning = false;
+bool cmp_leftFinished = false;
+bool cmp_rightFinished = false;
+bool cmp_loadState = false;
+bool cmp_movieFinished = false;
+bool cmp_justFinished = false;
+std::string cmp_currentMovie = "";
+std::string cmp_leftMovie = "";
+std::string cmp_rightMovie = "";
+std::string cmp_leftTitle = "";
+std::string cmp_rightTitle = "";
+std::string cmp_outputPath = "";
+std::string cmp_currentBranch = "";
+int cmp_width = 0;
+int cmp_height = 0;
+u64 cmp_startTimerFrame = 0;
+u64 cmp_curentBranchFrame = 0;
+
+bool updateMainFrame = false;
+
+
 static u8 s_numPads = 0;
 static ControllerState s_padState;
 static DTMHeader tmpHeader;
@@ -59,6 +109,7 @@ u64 g_currentLagCount = 0;
 static u64 s_totalLagCount = 0; // just stats
 u64 g_currentInputCount = 0, g_totalInputCount = 0; // just stats
 static u64 s_totalTickCount = 0, s_tickCountAtLastInput = 0; // just stats
+
 static u64 s_recordingStartTime; // seconds since 1970 that recording started
 static bool s_bSaveConfig = false, s_bSkipIdle = false, s_bDualCore = false, s_bProgressive = false, s_bDSPHLE = false, s_bFastDiscSpeed = false;
 static bool s_bSyncGPU = false, s_bNetPlay = false;
@@ -138,7 +189,7 @@ std::string GetInputDisplay()
 
 
 	//Dragonbane
-	std::string gameID = Memory::Read_String(0x0, 6);
+	std::string gameID = SConfig::GetInstance().m_LocalCoreStartupParameter.GetUniqueID();
 	std::string iniContent;
 
 	bool success = File::ReadFileToString(File::GetExeDirectory() + "\\InfoDisplay\\" + gameID + ".ini", iniContent);
@@ -609,13 +660,23 @@ std::string GetInputDisplay()
 void FrameUpdate()
 {
 	g_currentFrame++;
+	cmp_curentBranchFrame++;
+
 	if (!s_bPolled)
 		g_currentLagCount++;
 
 	if (IsRecordingInput())
 	{
 		g_totalFrames = g_currentFrame;
-		s_totalLagCount = g_currentLagCount;
+		//s_totalLagCount = g_currentLagCount;
+
+		//Dragonbane
+		if (g_currentLagCount > 0)
+		{
+			Core::DisplayMessage("Lag occurred during recording. Desync incoming?", 10000);
+			s_totalLagCount += g_currentLagCount;
+			g_currentLagCount = 0;
+		}
 	}
 	if (s_bFrameStep)
 	{
@@ -632,6 +693,17 @@ void FrameUpdate()
 		FrameSkipping();
 
 	s_bPolled = false;
+
+	if (cmp_isRunning && !cmp_movieFinished && IsPlayingInput() && g_currentFrame == (g_totalFrames - 1))
+	{
+		if (!GetNextComparisonMovie(false)) //Entire side is finished, stop dumping
+		{
+			SConfig::GetInstance().m_DumpFrames = false;
+			SConfig::GetInstance().m_DumpAudio = false;
+		}
+		
+		cmp_movieFinished = true;
+	}
 }
 
 // called when game is booting up, even if no movie is active,
@@ -642,6 +714,7 @@ void Init()
 	s_bFrameStep = false;
 	s_bFrameStop = false;
 	s_bSaveConfig = false;
+	justStoppedRecording = false; 
 	s_iCPUCore = SConfig::GetInstance().m_LocalCoreStartupParameter.iCPUCore;
 	if (IsPlayingInput())
 	{
@@ -679,6 +752,8 @@ void Init()
 		g_currentFrame = 0;
 		g_currentLagCount = 0;
 		g_currentInputCount = 0;
+
+		cmp_curentBranchFrame = 0; //Dragonbane
 	}
 }
 
@@ -693,7 +768,9 @@ void InputUpdate()
 	}
 
 	if (IsPlayingInput() && g_currentInputCount == (g_totalInputCount - 1) && SConfig::GetInstance().m_PauseMovie)
+	{
 		Core::SetState(Core::CORE_PAUSE);
+	}
 }
 
 void SetFrameSkipping(unsigned int framesToSkip)
@@ -913,11 +990,14 @@ bool BeginRecordingInput(int controllers)
 
 	bool was_unpaused = Core::PauseAndLock(true);
 
+	justStoppedRecording = false; //Dragonbane
+
 	s_numPads = controllers;
 	g_currentFrame = g_totalFrames = 0;
 	g_currentLagCount = s_totalLagCount = 0;
 	g_currentInputCount = g_totalInputCount = 0;
 	s_totalTickCount = s_tickCountAtLastInput = 0;
+	
 	s_bongos = 0;
 	s_memcards = 0;
 	if (NetPlay::IsNetPlayRunning())
@@ -931,6 +1011,7 @@ bool BeginRecordingInput(int controllers)
 	}
 
 	s_rerecords = 0;
+	s_currentByte = s_totalBytes = 0; //Dragonbane: Move this here so savestate doesnt get wrong information when recording multiple movies
 
 	for (int i = 0; i < MAX_SI_CHANNELS; ++i)
 		if (SConfig::GetInstance().m_SIDevice[i] == SIDEVICE_GC_TARUKONGA)
@@ -941,8 +1022,12 @@ bool BeginRecordingInput(int controllers)
 		if (File::Exists(tmpStateFilename))
 			File::Delete(tmpStateFilename);
 
+		saveMemCard = true;
+
 		State::SaveAs(tmpStateFilename);
 		s_bRecordingFromSaveState = true;
+		lastMovie = "";
+		saveMemCard = false;
 
 		// This is only done here if starting from save state because otherwise we won't have the titleid. Otherwise it's set in WII_IPC_HLE_Device_es.cpp.
 		// TODO: find a way to GetTitleDataPath() from Movie::Init()
@@ -961,11 +1046,36 @@ bool BeginRecordingInput(int controllers)
 	s_author = SConfig::GetInstance().m_strMovieAuthor;
 	EnsureTmpInputSize(1);
 
-	s_currentByte = s_totalBytes = 0;
-
 	Core::UpdateWantDeterminism();
 
 	Core::PauseAndLock(false, was_unpaused);
+
+
+	//Dragonbane: Create Dynamic Range
+	/*	
+	std::string gameID = SConfig::GetInstance().m_LocalCoreStartupParameter.GetUniqueID();
+
+	u8* newTmpInput = new u8[6316032];
+	if (tmpDynamicRange != nullptr)
+	{
+		delete[] tmpDynamicRange;
+	}
+	tmpDynamicRange = newTmpInput;
+
+	memset(&(tmpDynamicRange[0]), 0, 6316032);
+
+	if (!gameID.compare("GZ2E01") || !gameID.compare("GZ2P01"))
+	{
+		const u8* const memptr = Memory::m_pRAM;
+		if (memptr != nullptr && Core::IsRunningAndStarted())
+		{
+			memcpy(&(tmpDynamicRange[0]), memptr + 0xa0a000, 6316032);
+		}
+	}
+	*/
+	
+	badSettings = true;
+	
 
 	Core::DisplayMessage("Starting movie recording", 2000);
 	return true;
@@ -1204,6 +1314,44 @@ void CheckPadStatus(GCPadStatus* PadStatus, int controllerID)
 	s_padState.reset = g_bReset;
 	g_bReset = false;
 
+	//Dragonbane
+	std::string gameID = SConfig::GetInstance().m_LocalCoreStartupParameter.GetUniqueID();
+	u32 isLoadingAdd;
+	u32 charPointerAddress;
+
+	bool isTP = false;
+
+	if (!gameID.compare("GZ2E01"))
+	{
+		charPointerAddress = 0x3dce54;
+		isLoadingAdd = 0x450ce0;
+
+		isTP = true;
+	}
+	else if (!gameID.compare("GZ2P01"))
+	{
+		charPointerAddress = 0x3dedf4;
+		isLoadingAdd = 0x452ca0;
+
+		isTP = true;
+	}
+
+	//TP Stuff
+	if (isTP)
+	{
+		u32 characterpointer = Memory::Read_U32(charPointerAddress);
+		u32 isLoading = Memory::Read_U32(isLoadingAdd);
+
+		if (characterpointer > 0x80000000 && isLoading == 0)
+		{
+			characterpointer -= 0x80000000;
+
+			s_padState.LinkX = Memory::Read_F32(characterpointer);
+			s_padState.LinkZ = Memory::Read_F32(characterpointer + 0x8);
+		}
+	}
+
+
 	SetInputDisplayString(s_padState, controllerID);
 }
 
@@ -1214,9 +1362,126 @@ void RecordInput(GCPadStatus* PadStatus, int controllerID)
 
 	CheckPadStatus(PadStatus, controllerID);
 
-	EnsureTmpInputSize((size_t)(s_currentByte + 8));
-	memcpy(&(tmpInput[s_currentByte]), &s_padState, 8);
-	s_currentByte += 8;
+	//Dragonbane: Check for bad settings
+	if (badSettings)
+	{
+		if (SConfig::GetInstance().m_OCEnable || SConfig::GetInstance().m_LocalCoreStartupParameter.bDSPHLE)
+		{
+			PanicAlertT("Your settings are not recommended for recording and will likely cause desync!\nPlease disable CPU Overclocking and use LLE audio.");
+		}
+		else if (SConfig::GetInstance().m_LocalCoreStartupParameter.bCPUThread)
+		{
+			PanicAlertT("Info: Please disable Dual Core to prevent desync issues!");
+		}
+		badSettings = false;
+	}
+
+	//Dragonbane: New dangerous stuff
+	/*
+	std::string gameID = SConfig::GetInstance().m_LocalCoreStartupParameter.GetUniqueID();
+	u32 isLoadingAdd;
+	u32 charPointerAddress;
+
+	bool isTP = false;
+
+	if (!gameID.compare("GZ2E01"))
+	{
+		charPointerAddress = 0x3dce54;
+		isLoadingAdd = 0x450ce0;
+
+		isTP = true;
+	}
+	else if (!gameID.compare("GZ2P01"))
+	{
+		charPointerAddress = 0x3dedf4;
+		isLoadingAdd = 0x452ca0;
+
+		isTP = true;
+	}
+
+	bool updatedMemory = false;
+
+	//TP Stuff
+	if (isTP)
+	{
+		u32 characterpointer = Memory::Read_U32(charPointerAddress);
+		u32 isLoading = Memory::Read_U32(isLoadingAdd);
+
+		if (characterpointer > 0x80000000 && isLoading == 0)
+		{
+			characterpointer -= 0x80000000;
+
+			const u8* const memptr = Memory::m_pRAM;
+			//Memory::RAM_SIZE
+			if (memptr != nullptr )
+			{
+				u8* newMemory;
+				newMemory = new u8[12632068]; //6316032 * 2 + 4
+				u32 newMemPos = 4;
+				u32 countChanges = 0;
+				u32 actualSize;
+
+				int show = 0;
+
+				for (u32 i = 0; i < 6316032 - 4; i += 4)
+				{
+					if (memcmp(&(tmpDynamicRange[i]), (memptr + 0xa0a000) + i, 4) != 0)
+					{
+						countChanges += 1;
+
+						/*
+						if (show < 3)
+						{
+							PanicAlertT("i:%d ; New Mem Pos: %d", i, newMemPos);
+							show++;
+						}
+						*/
+						/*
+
+						memcpy(&(newMemory[newMemPos]), &i, 4);
+						memcpy(&(newMemory[newMemPos + 4]), (memptr + 0xa0a000) + i, 4);
+
+						memcpy(&(tmpDynamicRange[i]), (memptr + 0xa0a000) + i, 4);
+
+						newMemPos += 8;
+					}
+				}
+
+				if (countChanges > 0)
+				{
+					//PanicAlertT("Amount of changes:%d", countChanges);
+
+					memcpy(&(newMemory[0]), &countChanges, 4);
+
+					actualSize = 20 + (countChanges * 8);   //16 + 4 
+
+					EnsureTmpInputSize((size_t)(s_currentByte + actualSize)); //Dragonbane: 16
+					memcpy(&(tmpInput[s_currentByte]), &s_padState, 16);
+
+					memcpy(&(tmpInput[s_currentByte + 16]), &(newMemory[0]), actualSize - 16);
+
+					s_currentByte += actualSize;
+
+					updatedMemory = true;
+				}
+
+				//Clean Memory
+				delete[] newMemory;
+				newMemory = nullptr;
+			}
+		}
+	}
+	*/
+
+	//if (!updatedMemory)
+	//{
+		EnsureTmpInputSize((size_t)(s_currentByte + 16)); //Dragonbane: 16
+		memcpy(&(tmpInput[s_currentByte]), &s_padState, 16);
+
+		//memset(&(tmpInput[s_currentByte+16]), 0, 4);
+		s_currentByte += 16;
+	//}
+
 	s_totalBytes = s_currentByte;
 }
 
@@ -1304,11 +1569,15 @@ bool PlayInput(const std::string& filename)
 	s_totalLagCount = tmpHeader.lagCount;
 	g_totalInputCount = tmpHeader.inputCount;
 	s_totalTickCount = tmpHeader.tickCount;
+
 	g_currentFrame = 0;
 	g_currentLagCount = 0;
 	g_currentInputCount = 0;
 
 	s_playMode = MODE_PLAYING;
+	isVerifying = false; //Dragonbane
+	isAutoVerifying = false;
+	justStoppedRecording = false;
 
 	Core::UpdateWantDeterminism();
 
@@ -1328,6 +1597,37 @@ bool PlayInput(const std::string& filename)
 		Movie::LoadInput(filename);
 	}
 
+	//Make sure Auto Roll is off for playback/verification
+	roll_enabled = false;
+	checkSave = false;
+	uncheckSave = true;
+
+	//Core::SetIsFramelimiterTempDisabled(true);
+
+
+	//Dragonbane: Create Dynamic Range
+	/*
+	std::string gameID = SConfig::GetInstance().m_LocalCoreStartupParameter.GetUniqueID();
+
+	u8* newTmpInput = new u8[6316032];
+	if (tmpDynamicRange != nullptr)
+	{
+		delete[] tmpDynamicRange;
+	}
+	tmpDynamicRange = newTmpInput;
+
+	memset(&(tmpDynamicRange[0]), 0, 6316032);
+
+	if (!gameID.compare("GZ2E01") || !gameID.compare("GZ2P01"))
+	{
+		const u8* const memptr = Memory::m_pRAM;
+		if (memptr != nullptr && Core::IsRunningAndStarted())
+		{
+			memcpy(&(tmpDynamicRange[0]), memptr + 0xa0a000, 6316032);
+		}
+	}
+	*/
+
 	return true;
 }
 
@@ -1342,10 +1642,30 @@ void DoState(PointerWrap &p)
 	p.Do(s_bPolled);
 	p.Do(s_tickCountAtLastInput);
 	// other variables (such as s_totalBytes and g_totalFrames) are set in LoadInput
+
+	//Dragonbane: Save Roll Stuff
+	p.Do(roll_enabled);
+	p.Do(first_roll);
+	p.Do(roll_timer);
+
+	if (roll_enabled)
+	{ 
+		checkSave = true;
+		uncheckSave = false;
+	}
+	else
+	{
+		uncheckSave = true;
+		checkSave = false;
+	}
 }
 
 void LoadInput(const std::string& filename)
 {
+	//Dragonbane
+	if (isVerifying)
+		return;
+
 	File::IOFile t_record;
 	if (!t_record.Open(filename, "r+b"))
 	{
@@ -1383,6 +1703,7 @@ void LoadInput(const std::string& filename)
 	{
 		PanicAlertT("Warning: You loaded a save whose movie ends before the current frame in the save (byte %u < %u) (frame %u < %u). You should load another save before continuing.", (u32)totalSavedBytes+256, (u32)s_currentByte+256, (u32)tmpHeader.frameCount, (u32)g_currentFrame);
 		afterEnd = true;
+		Host_Message(WM_USER_STOP);
 	}
 
 	if (!s_bReadOnly || tmpInput == nullptr)
@@ -1391,7 +1712,20 @@ void LoadInput(const std::string& filename)
 		s_totalLagCount = tmpHeader.lagCount;
 		g_totalInputCount = tmpHeader.inputCount;
 		s_totalTickCount = s_tickCountAtLastInput = tmpHeader.tickCount;
+		s_bRecordingFromSaveState = tmpHeader.bFromSaveState; //Dragonbane
 
+		if (s_bRecordingFromSaveState && lastMovie.compare(filename))
+		{
+			std::string stateFilename = filename + ".sav";
+
+			if (File::Exists(tmpStateFilename))
+				File::Delete(tmpStateFilename);
+
+			File::Copy(stateFilename, tmpStateFilename);
+
+			lastMovie = filename;
+		}
+		
 		EnsureTmpInputSize((size_t)totalSavedBytes);
 		s_totalBytes = totalSavedBytes;
 		t_record.ReadArray(tmpInput, (size_t)s_totalBytes);
@@ -1426,11 +1760,11 @@ void LoadInput(const std::string& filename)
 					}
 					else
 					{
-						int frame = i / 8;
+						int frame = i / 16; //Dragonbane: 16
 						ControllerState curPadState;
-						memcpy(&curPadState, &(tmpInput[frame*8]), 8);
+						memcpy(&curPadState, &(tmpInput[frame * 16]), 16);
 						ControllerState movPadState;
-						memcpy(&movPadState, &(movInput[frame*8]), 8);
+						memcpy(&movPadState, &(movInput[frame * 16]), 16);
 						PanicAlertT("Warning: You loaded a save whose movie mismatches on frame %d. You should load another save before continuing, or load this state with read-only mode off. Otherwise you'll probably get a desync.\n\n"
 							"More information: The current movie is %d frames long and the savestate's movie is %d frames long.\n\n"
 							"On frame %d, the current movie presses:\n"
@@ -1471,6 +1805,7 @@ void LoadInput(const std::string& filename)
 			if (s_playMode != MODE_RECORDING)
 			{
 				s_playMode = MODE_RECORDING;
+				justStoppedRecording = false;
 				Core::DisplayMessage("Switched to recording", 2000);
 			}
 		}
@@ -1496,12 +1831,144 @@ void PlayController(GCPadStatus* PadStatus, int controllerID)
 	if (!IsPlayingInput() || !IsUsingPad(controllerID) || tmpInput == nullptr)
 		return;
 
-	if (s_currentByte + 8 > s_totalBytes)
+	//Dragonbane: Detect bad settings
+	if (badSettings == false)
 	{
-		PanicAlertT("Premature movie end in PlayController. %u + 8 > %u", (u32)s_currentByte, (u32)s_totalBytes);
-		EndPlayInput(!s_bReadOnly);
-		return;
+		if (SConfig::GetInstance().m_OCEnable || SConfig::GetInstance().m_LocalCoreStartupParameter.bDSPHLE)
+		{
+			PanicAlertT("This movie was recorded with unreliable settings and will likely desync!\nPlease disable CPU Overclocking and use LLE audio.");
+		}
+		else if (SConfig::GetInstance().m_LocalCoreStartupParameter.bCPUThread)
+		{
+			PanicAlertT("This movie was recorded with inconsistent settings and might desync!\nPlease disable Dual Core to prevent desync issues.");
+		}
+		
+		badSettings = true;
 	}
+
+	//Dragonbane: Lag warning
+	if (lagWarning == false)
+	{
+		if (s_totalLagCount > 0)
+		{
+			PanicAlertT("Lag occurred during the recording of this movie. Desync possible...");
+			lagWarning = true;
+		}
+	}
+
+	//Dragonbane: Auto Save
+	if (isAutoVerifying && s_currentByte + 80 == s_totalBytes) //Ask for auto save 5 frames before end
+	{
+		if (AskYesNoT("Set current frame as start position for next verification?"))
+		{
+			autoSave = true;
+			updateMainFrame = true;
+		}
+		isAutoVerifying = false;
+	}
+
+	//Make sure Auto Roll is off for playback/verification
+	roll_enabled = false;
+	checkSave = false;
+	uncheckSave = true;
+
+	//TP Stuff
+	std::string gameID = SConfig::GetInstance().m_LocalCoreStartupParameter.GetUniqueID();
+	u32 isLoadingAdd;
+	u32 charPointerAddress;
+
+	bool isTP = false;
+
+	if (!gameID.compare("GZ2E01"))
+	{
+		charPointerAddress = 0x3dce54;
+		isLoadingAdd = 0x450ce0;
+
+		isTP = true;
+	}
+	else if (!gameID.compare("GZ2P01"))
+	{
+		charPointerAddress = 0x3dedf4;
+		isLoadingAdd = 0x452ca0;
+
+		isTP = true;
+	}
+
+	/*
+	bool memoryUpdated = false;
+
+	//Dragonbane: Update RAM
+	if (isTP)
+	{
+		u8* memptr = Memory::m_pRAM;
+
+		if (memptr != nullptr)
+		{
+			u32 numChanges = 0;
+			u32 memOffset = 0;
+
+			u64 offsetPos = 0;
+
+			memcpy(&numChanges, &(tmpInput[s_currentByte + 16]), 4); //Dragonbane
+
+			if (numChanges > 0)
+			{
+				for (u32 i = 0; i < numChanges; i++)
+				{
+					offsetPos = s_currentByte + 20 + (i * 8);
+					memcpy(&memOffset, &(tmpInput[offsetPos]), 4);
+
+					/*
+					if ((0xa0a000 + memOffset) == characterpointer)
+					{
+					float LinkX = Memory::Read_F32(characterpointer);
+					float nextLinkX = 0.0f;
+
+					Memory::Write_U32(0, characterpointer);
+
+					//memcpy(&nextLinkX, &(tmpInput[offsetPos + 4]), 4);
+
+					nextLinkX = Memory::Read_F32(characterpointer);
+					}
+					*/
+					/*
+					if (memOffset < 0xFC4C && memOffset > 0xA000)
+						memcpy((memptr + 0xa0a000) + memOffset, &(tmpInput[offsetPos + 4]), 4);
+					
+					//memcpy(&(tmpDynamicRange[memOffset]), &(tmpInput[offsetPos + 4]), 4);
+				}
+
+				u32 sizeChange = 20 + (numChanges * 8);
+
+				if (s_currentByte + sizeChange > s_totalBytes) //Dragonbane: 16
+				{
+					PanicAlertT("Premature movie end in PlayController. %u + %u > %u", (u32)s_currentByte, (u32)sizeChange, (u32)s_totalBytes);
+					EndPlayInput(!s_bReadOnly);
+					return;
+				}
+
+				memcpy(&s_padState, &(tmpInput[s_currentByte]), 16); //Dragonbane
+				s_currentByte += sizeChange;
+
+				memoryUpdated = true;
+			}
+		}
+	}
+	*/
+
+	//if (!memoryUpdated)
+	//{
+		if (s_currentByte + 16 > s_totalBytes) //Dragonbane: 16
+		{
+			PanicAlertT("Premature movie end in PlayController. %u + 16 > %u", (u32)s_currentByte, (u32)s_totalBytes);
+			EndPlayInput(!s_bReadOnly);
+			return;
+		}
+
+		memcpy(&s_padState, &(tmpInput[s_currentByte]), 16); //Dragonbane
+		s_currentByte += 16; //Dragonbane: 16
+	//}
+
 
 	// dtm files don't save the mic button or error bit. not sure if they're actually used, but better safe than sorry
 	signed char e = PadStatus->err;
@@ -1509,8 +1976,78 @@ void PlayController(GCPadStatus* PadStatus, int controllerID)
 	PadStatus->err = e;
 
 
-	memcpy(&s_padState, &(tmpInput[s_currentByte]), 8);
-	s_currentByte += 8;
+	//Dragonbane: Check for desync
+	//TP Stuff
+	if (isTP)
+	{
+		u32 characterpointer = Memory::Read_U32(charPointerAddress);
+		u32 isLoading = Memory::Read_U32(isLoadingAdd);
+
+		if (characterpointer > 0x80000000 && isLoading == 0)
+		{
+			characterpointer -= 0x80000000;
+
+			float LinkX = Memory::Read_F32(characterpointer);
+			float LinkZ = Memory::Read_F32(characterpointer + 0x8);
+
+			if (s_padState.LinkX != LinkX || s_padState.LinkZ != LinkZ)
+			{
+				std::string message = StringFromFormat("Desync detected on frame: %d!", g_currentFrame);
+				Core::DisplayMessage(message, 2000);
+
+				desyncCount += 1;
+
+				/*
+				u8* memptr = Memory::m_pRAM;
+				if (memptr != nullptr && Core::IsRunningAndStarted())
+				{
+					memcpy((memptr + 0xa0a000), &(tmpDynamicRange[0]), 1007616); //6316032);
+				}
+				*/
+
+				//PanicAlertT("Desync occurred on frame: %d!\nMovie Link Pos: %.02f, %.02f | Curr Link Pos: %.02f, %.02f", g_currentFrame, s_padState.LinkX, s_padState.LinkZ, LinkX, LinkZ);
+
+				/*
+				bool matchFound = false;
+
+				ControllerState pastPadState;
+				memset(&pastPadState, 0, sizeof(pastPadState));
+				memcpy(&pastPadState, &(tmpInput[s_currentByte - 32]), 16);
+
+				ControllerState nextPadState;
+				memset(&nextPadState, 0, sizeof(nextPadState));
+				memcpy(&nextPadState, &(tmpInput[s_currentByte]), 16);
+
+				if (pastPadState.LinkX == LinkX && pastPadState.LinkZ == LinkZ)
+				{
+					s_currentByte -= 32;
+					memcpy(&s_padState, &(tmpInput[s_currentByte]), 16);
+					s_currentByte += 16;
+
+					matchFound = true;
+				}
+				else if (nextPadState.LinkX == LinkX && nextPadState.LinkZ == LinkZ)
+				{
+					memcpy(&s_padState, &(tmpInput[s_currentByte]), 16);
+					s_currentByte += 16;
+
+					matchFound = true;
+				}
+				if (matchFound)
+				{
+					//PanicAlertT("Trying to match with: \nMovie Link Pos: %.02f, %.02f | Curr Link Pos: %.02f, %.02f", s_padState.LinkX, s_padState.LinkZ, LinkX, LinkZ);
+				}
+				else
+				{
+					PanicAlertT("Unable to recover from desync, end playback!");
+					EndPlayInput(!s_bReadOnly);
+					return;
+				}
+				*/
+			}
+		}
+	}
+
 
 	PadStatus->triggerLeft = s_padState.TriggerL;
 	PadStatus->triggerRight = s_padState.TriggerR;
@@ -1585,6 +2122,7 @@ void PlayController(GCPadStatus* PadStatus, int controllerID)
 	if (s_padState.reset)
 		ProcessorInterface::ResetButton_Tap();
 
+	
 	SetInputDisplayString(s_padState, controllerID);
 	CheckInputEnd();
 }
@@ -1637,6 +2175,7 @@ void EndPlayInput(bool cont)
 	{
 		s_playMode = MODE_RECORDING;
 		Core::DisplayMessage("Reached movie end. Resuming recording.", 2000);
+		justStoppedRecording = false;
 	}
 	else if (s_playMode != MODE_NONE)
 	{
@@ -1650,6 +2189,61 @@ void EndPlayInput(bool cont)
 		//g_totalFrames = s_totalBytes = 0;
 		//delete tmpInput;
 		//tmpInput = nullptr;
+
+		if (cmp_isRunning && cmp_movieFinished)
+		{
+			if (!GetNextComparisonMovie(true))
+			{
+				if (cmp_currentMovie == cmp_leftMovie)
+				{
+					//PanicAlertT("Left side done");
+					cmp_currentMovie = cmp_rightMovie;
+					cmp_leftFinished = true;
+				}
+				else
+				{
+					//PanicAlertT("Right side done");
+					cmp_currentMovie = cmp_leftMovie;
+					cmp_rightFinished = true;
+				}
+
+				if (!cmp_leftFinished || !cmp_rightFinished)
+					cmp_startTimerFrame = GetDTMComparisonLength(cmp_currentBranch);
+
+				cmp_currentBranch = cmp_currentMovie;
+				cmp_curentBranchFrame = 0;
+			}
+
+			if (!cmp_leftFinished || !cmp_rightFinished)
+			{
+				RenderComparisonVideo(false);
+			}
+			else
+			{
+				CancelComparison();
+				cmp_justFinished = true;
+				PanicAlertT("Comparison Video successfully recorded!");
+			}
+
+			cmp_movieFinished = false;
+		}
+		
+		if (Core::IsRunningAndStarted()) //Dragonbane
+			updateMainFrame = true;
+		
+	}
+
+	//Dragonbane
+	if (isVerifying)
+	{
+		if (desyncCount > 0)
+			PanicAlertT("Verifying process failed! %i desync(s) detected :(", desyncCount);
+		else
+			PanicAlertT("Verifying process succeeded :)");
+
+		Core::SetIsFramelimiterTempDisabled(false);
+		isVerifying = false;
+		desyncCount = 0;
 	}
 }
 
@@ -1699,6 +2293,7 @@ void SaveRecording(const std::string& filename)
 	header.DSPiromHash = s_DSPiromHash;
 	header.DSPcoefHash = s_DSPcoefHash;
 	header.tickCount = s_totalTickCount;
+
 
 	// TODO
 	header.uniqueID = 0;
@@ -1841,5 +2436,564 @@ void Shutdown()
 	delete [] tmpInput;
 	tmpInput = nullptr;
 	tmpInputAllocated = 0;
+
+	//Dragonbane
+	//delete[] tmpDynamicRange;
+	//tmpDynamicRange = nullptr;
+	badSettings = false;
+	isVerifying = false;
+}
+
+bool VerifyRecording(const std::string& moviename, const std::string& statename, bool fromStart)
+{
+	isVerifying = false;
+	isAutoVerifying = false;
+	justStoppedRecording = false;
+
+	if (s_playMode != MODE_NONE)
+		return false;
+
+	if (!File::Exists(moviename))
+		return false;
+
+	if (statename.size() > 1 && !File::Exists(statename))
+		return false;
+
+	if (statename.size() < 2 && Core::IsRunningAndStarted())
+		return false;
+
+	File::IOFile g_recordfd;
+
+	if (!g_recordfd.Open(moviename, "rb"))
+		return false;
+
+	g_recordfd.ReadArray(&tmpHeader, 1);
+
+	if (!IsMovieHeader(tmpHeader.filetype))
+	{
+		PanicAlertT("Invalid recording file");
+		g_recordfd.Close();
+		return false;
+	}
+
+	ReadHeader();
+	g_totalFrames = tmpHeader.frameCount;
+	s_totalLagCount = tmpHeader.lagCount;
+	g_totalInputCount = tmpHeader.inputCount;
+	s_totalTickCount = tmpHeader.tickCount;
+
+	g_currentFrame = 0;
+	g_currentLagCount = 0;
+	g_currentInputCount = 0;
+
+	s_playMode = MODE_PLAYING;
+
+	Core::UpdateWantDeterminism();
+
+	s_totalBytes = g_recordfd.GetSize() - 256;
+	EnsureTmpInputSize((size_t)s_totalBytes);
+	g_recordfd.ReadArray(tmpInput, (size_t)s_totalBytes);
+	s_currentByte = 0;
+	g_recordfd.Close();
+
+
+    if (fromStart == true && statename.size() > 1 || fromStart == false && statename.size() > 1) // Load savestate (and skip to frame data)
+	{
+		const std::string stateFilename = statename;
+
+		tmpHeader.bFromSaveState = true;
+		s_bRecordingFromSaveState = true;
+
+		isVerifying = true;
+
+		if (Core::IsRunningAndStarted())
+			State::LoadAs(stateFilename);
+		else
+			Core::SetStateFileName(stateFilename);
+
+		isVerifying = false;
+		
+		File::IOFile t_record;
+		t_record.Open(moviename, "r+b");
+	
+		ChangePads(true);
+		if (SConfig::GetInstance().m_LocalCoreStartupParameter.bWii)
+			ChangeWiiPads(true);
+
+		u64 totalSavedBytes = t_record.GetSize() - 256;
+
+		bool afterEnd = false;
+		// This can only happen if the user manually deletes data from the dtm.
+		if (s_currentByte > totalSavedBytes)
+		{
+			PanicAlertT("Warning: You loaded a save whose movie ends before the current frame in the save (byte %u < %u) (frame %u < %u). You should load another save.", (u32)totalSavedBytes + 256, (u32)s_currentByte + 256, (u32)tmpHeader.frameCount, (u32)g_currentFrame);
+			afterEnd = true;
+		}
+
+		if (s_currentByte > 0)
+		{
+			if (!File::Exists(stateFilename + ".dtm"))
+			{
+				PanicAlertT("Warning: There is no dtm file associated with this save. This might not work...");
+			}
+			else if (s_currentByte > totalSavedBytes)
+			{
+			}
+			else if (s_currentByte > s_totalBytes)
+			{
+				afterEnd = true;
+				PanicAlertT("Warning: You loaded a save that's after the end of the current movie. (byte %u > %u) (frame %u > %u). You should load another save.", (u32)s_currentByte + 256, (u32)s_totalBytes + 256, (u32)g_currentFrame, (u32)g_totalFrames);
+			}
+			else if(s_currentByte > 0 && s_totalBytes > 0 )
+			{
+				// verify identical from movie start to the save's current frame
+				u32 len = (u32)s_currentByte;
+				u8* movInput = new u8[len];
+
+				t_record.Seek(256, SEEK_SET);
+				t_record.ReadArray(movInput, (size_t)len);
+
+				File::IOFile t_record_state;
+				t_record_state.Open(stateFilename + ".dtm", "r+b");
+				u8* stateInput = new u8[len];
+
+				t_record_state.Seek(256, SEEK_SET);
+				t_record_state.ReadArray(stateInput, (size_t)len);
+
+				t_record_state.Close();
+
+				for (u32 i = 0; i < len; ++i)
+				{
+					if (movInput[i] != stateInput[i]) //Dragonbane
+					{
+						// this is a "you did something wrong" alert for the user's benefit.
+						// we'll try to say what's going on in excruciating detail, otherwise the user might not believe us.
+						if (IsUsingWiimote(0))
+						{
+							// TODO: more detail
+							PanicAlertT("Warning: You loaded a save whose movie mismatches on byte %d (0x%X). You should load another save.", i + 256, i + 256);
+							memcpy(tmpInput, stateInput, s_currentByte);
+						}
+						else
+						{
+							int frame = i / 16; //Dragonbane: 16
+							ControllerState curPadState;
+							memcpy(&curPadState, &(tmpInput[frame * 16]), 16);
+							ControllerState movPadState;
+							memcpy(&movPadState, &(stateInput[frame * 16]), 16);
+							PanicAlertT("Warning: You loaded a save whose movie mismatches on frame %d. You should load another save.\n\n"
+								"More information: The current movie is %d frames long and the savestate's movie is %d frames long.\n\n"
+								"On frame %d, the current movie presses:\n"
+								"Start=%d, A=%d, B=%d, X=%d, Y=%d, Z=%d, DUp=%d, DDown=%d, DLeft=%d, DRight=%d, L=%d, R=%d, LT=%d, RT=%d, AnalogX=%d, AnalogY=%d, CX=%d, CY=%d"
+								"\n\n"
+								"On frame %d, the savestate's movie presses:\n"
+								"Start=%d, A=%d, B=%d, X=%d, Y=%d, Z=%d, DUp=%d, DDown=%d, DLeft=%d, DRight=%d, L=%d, R=%d, LT=%d, RT=%d, AnalogX=%d, AnalogY=%d, CX=%d, CY=%d",
+								(int)frame,
+								(int)g_totalFrames, (int)tmpHeader.frameCount,
+								(int)frame,
+								(int)curPadState.Start, (int)curPadState.A, (int)curPadState.B, (int)curPadState.X, (int)curPadState.Y, (int)curPadState.Z, (int)curPadState.DPadUp, (int)curPadState.DPadDown, (int)curPadState.DPadLeft, (int)curPadState.DPadRight, (int)curPadState.L, (int)curPadState.R, (int)curPadState.TriggerL, (int)curPadState.TriggerR, (int)curPadState.AnalogStickX, (int)curPadState.AnalogStickY, (int)curPadState.CStickX, (int)curPadState.CStickY,
+								(int)frame,
+								(int)movPadState.Start, (int)movPadState.A, (int)movPadState.B, (int)movPadState.X, (int)movPadState.Y, (int)movPadState.Z, (int)movPadState.DPadUp, (int)movPadState.DPadDown, (int)movPadState.DPadLeft, (int)movPadState.DPadRight, (int)movPadState.L, (int)movPadState.R, (int)movPadState.TriggerL, (int)movPadState.TriggerR, (int)movPadState.AnalogStickX, (int)movPadState.AnalogStickY, (int)movPadState.CStickX, (int)movPadState.CStickY);
+
+						}
+						break;
+					}
+				}
+				delete[] movInput;
+				delete[] stateInput;
+			}
+		}
+		t_record.Close();
+
+		s_bSaveConfig = tmpHeader.bSaveConfig;
+
+		if (!afterEnd)
+		{
+			if (s_playMode != MODE_PLAYING)
+			{
+				s_playMode = MODE_PLAYING;
+			}
+		}
+		else
+		{
+			EndPlayInput(false);
+			return false;
+		}
+
+	}
+
+	Core::SetIsFramelimiterTempDisabled(true);
+
+	isVerifying = true;
+	desyncCount = 0;
+
+	//Make sure Auto Roll is off for playback/verification
+	roll_enabled = false;
+	checkSave = false;
+	uncheckSave = true;
+
+	Core::DisplayMessage("Switched to verifying", 5000);
+
+	return true;
+}
+void CancelVerifying()
+{
+	desyncCount = 0;
+	isVerifying = false;
+	isAutoVerifying = false;
+	badSettings = false;
+
+	Core::SetIsFramelimiterTempDisabled(false);
+}
+void CancelRecording()
+{
+	desyncCount = 0;
+	isVerifying = false;
+	isAutoVerifying = false;
+	badSettings = false;
+
+	Core::SetIsFramelimiterTempDisabled(false);
+
+	if (IsRecordingInput())
+		justStoppedRecording = true;
+
+	s_playMode = MODE_NONE;
+	Core::UpdateWantDeterminism();
+
+	if (cmp_isRunning || cmp_requested)
+		CancelComparison();
+
+	Core::DisplayMessage("Stop Recording/Playback", 4000);
+}
+bool IsAutoSave()
+{
+	if (autoSave)
+	{
+		autoSave = false;
+		return true;
+	}
+	return false;
+}
+bool IsMovieFromSaveState(const std::string& moviename)
+{
+	if (!File::Exists(moviename))
+		return false;
+
+	File::IOFile g_recordfd;
+
+	if (!g_recordfd.Open(moviename, "rb"))
+		return false;
+
+	DTMHeader tmpHead;
+
+	g_recordfd.ReadArray(&tmpHead, 1);
+
+	g_recordfd.Close();
+
+	if (!IsMovieHeader(tmpHead.filetype))
+		return false;
+
+
+	if (tmpHead.bFromSaveState)
+		return true;
+	else
+		return false;
+		
+}
+bool AutoVerify()
+{
+	if (Movie::IsRecordingInput() || Movie::justStoppedRecording)
+	{
+		if (File::Exists(autoVerifyMovieFilename))
+			File::Delete(autoVerifyMovieFilename);
+
+		if (File::Exists(autoVerifyMovieFilename + ".sav"))
+			File::Delete(autoVerifyMovieFilename + ".sav");
+
+		CancelRecording();
+		SaveRecording(autoVerifyMovieFilename);
+
+		if (File::Exists(autoVerifyStateFilename))
+		{
+			VerifyRecording(autoVerifyMovieFilename, autoVerifyStateFilename, false);
+
+			isAutoVerifying = true;
+			return true;
+		}
+
+	}
+	else
+	{
+		if (File::Exists(autoVerifyMovieFilename) && File::Exists(autoVerifyStateFilename))
+		{
+			CancelVerifying();
+			VerifyRecording(autoVerifyMovieFilename, autoVerifyStateFilename, false);
+
+			isAutoVerifying = true;
+			return true;
+		}
+	}
+
+	if (File::Exists(autoVerifyMovieFilename))
+	{
+		if (IsMovieFromSaveState(autoVerifyMovieFilename))
+		{
+			PanicAlertT("Unsupported feature sorry :/");
+			return false;
+		}
+		else
+		{
+			if (!Core::IsRunningAndStarted())
+			{
+				VerifyRecording(autoVerifyMovieFilename, "", true);
+
+				isAutoVerifying = true;
+				return true;
+			}
+			else
+			{
+				PanicAlertT("You can only verify this movie from a fresh boot. Please close the game and try to verify again without the game running!");
+				return false;
+			}
+		}
+	}
+
+	return false;
+}
+void RequestVideoComparison(const std::string& leftMovie, const std::string& rightMovie, const std::string& leftMovieTitle, const std::string& rightMovieTitle, int width, int height, const std::string& savePath)
+{
+	//Dragonbane: Set Variables for other systems
+	cmp_leftMovie = leftMovie;
+	cmp_rightMovie = rightMovie;
+	cmp_currentMovie = "";
+	cmp_leftTitle = leftMovieTitle;
+	cmp_rightTitle = rightMovieTitle;
+	cmp_width = width;
+	cmp_height = height;
+	cmp_outputPath = savePath;
+
+	cmp_isRunning = false;
+	cmp_leftFinished = false;
+	cmp_rightFinished = false;
+	cmp_justFinished = false;
+	cmp_requested = true;
+
+	//Set correct render settings
+	Host_UpdateMainFrame();
+}
+bool StartVideoComparison()
+{
+	cmp_requested = false;
+
+	//Find all DTMs, time and find faster side
+	u64 leftTiming = 0, rightTiming = 0;
+
+	leftTiming = GetDTMComparisonLength(cmp_leftMovie);
+	//PanicAlertT("Left Timing: %i", leftTiming);
+
+	rightTiming = GetDTMComparisonLength(cmp_rightMovie);
+	//PanicAlertT("Right Timing: %i", rightTiming);
+	
+	if (leftTiming == 0 || rightTiming == 0)
+	{
+		PanicAlertT("Critical Error. Please check the DTM files!");
+		return false;
+	}
+
+	if (leftTiming < rightTiming)
+	{
+		//Left side faster, render that one first
+		cmp_currentMovie = cmp_leftMovie;
+	}
+	else
+	{
+		//Right side faster or equal (default)
+		cmp_currentMovie = cmp_rightMovie;
+	}
+	
+	cmp_isRunning = true;
+	cmp_justFinished = false;
+	cmp_currentBranch = cmp_currentMovie;
+	cmp_curentBranchFrame = 0;
+
+	//Start Dumping
+	SConfig::GetInstance().m_PauseMovie = false;
+	SConfig::GetInstance().m_DumpFrames = true;
+	SConfig::GetInstance().m_DumpAudio = true;
+
+	RenderComparisonVideo(true);
+
+	return true;
+}
+void RenderComparisonVideo(bool schedule)
+{
+	File::IOFile g_recordfd;
+
+	if (!g_recordfd.Open(cmp_currentMovie, "rb"))
+		return;
+
+	g_recordfd.ReadArray(&tmpHeader, 1);
+
+	ReadHeader();
+	g_totalFrames = tmpHeader.frameCount;
+	s_totalLagCount = tmpHeader.lagCount;
+	g_totalInputCount = tmpHeader.inputCount;
+	s_totalTickCount = tmpHeader.tickCount;
+
+	g_currentFrame = 0;
+	g_currentLagCount = 0;
+	g_currentInputCount = 0;
+
+	s_playMode = MODE_PLAYING;
+
+	Core::UpdateWantDeterminism();
+
+	s_totalBytes = g_recordfd.GetSize() - 256;
+	EnsureTmpInputSize((size_t)s_totalBytes);
+	g_recordfd.ReadArray(tmpInput, (size_t)s_totalBytes);
+	s_currentByte = 0;
+	g_recordfd.Close();
+
+	if (Core::IsRunningAndStarted() && !tmpHeader.bFromSaveState)
+	{
+		PanicAlertT("Only the first dtm is allowed to be from bootup!");
+		cmp_isRunning = false;
+		s_playMode = MODE_NONE;
+		return;
+	}
+
+	if (tmpHeader.bFromSaveState) // Load savestate (and skip to frame data)
+	{
+		const std::string stateFilename = cmp_currentMovie + ".sav";
+
+		s_bRecordingFromSaveState = true;
+
+		if (Core::IsRunningAndStarted())
+		{
+			cmp_loadState = true;
+
+			if (schedule)
+				Host_UpdateMainFrame();
+		}
+		else
+		{
+			Core::SetStateFileName(stateFilename);
+		}
+
+		ChangePads(true);
+		if (SConfig::GetInstance().m_LocalCoreStartupParameter.bWii)
+			ChangeWiiPads(true);
+
+		s_bSaveConfig = tmpHeader.bSaveConfig;
+	}
+
+	//Make sure Auto Roll is off for recording
+	roll_enabled = false;
+	checkSave = false;
+	uncheckSave = true;
+}
+u64 GetDTMComparisonLength(const std::string& movie)
+{
+	File::IOFile g_recordfd;
+	DTMHeader dtmHeader;
+
+	std::string file, legalPathname, extension;
+	std::string currMovie = movie;
+	int counter = 0;
+	u64 timing = 0;
+
+
+	while (File::Exists(currMovie))
+	{
+		//PanicAlertT("Curr: %s", currMovie.c_str());
+
+		g_recordfd.Open(currMovie, "rb");
+
+		g_recordfd.ReadArray(&dtmHeader, 1);
+
+		timing += dtmHeader.frameCount;
+
+		g_recordfd.Close();
+
+		counter++;
+
+		SplitPathEscapeChar(currMovie, &legalPathname, &file, &extension);
+
+		size_t npos = file.find_last_of('_');
+		if (npos == std::string::npos)
+			break;
+
+		if (npos + 3 != file.length())
+			break;
+
+		std::string counterString = StringFromInt(counter);
+
+		if (counter < 10)
+			counterString = "0" + counterString;
+
+		currMovie = legalPathname + file.substr(0, npos + 1) + counterString + extension;
+	}
+
+	return timing;
+}
+bool GetNextComparisonMovie(bool update)
+{
+	std::string file, legalPathname, extension;
+	std::string currMovie = cmp_currentMovie;
+
+	SplitPathEscapeChar(currMovie, &legalPathname, &file, &extension);
+
+	size_t npos = file.find_last_of('_');
+	if (npos == std::string::npos)
+		return false;
+
+	if (npos + 3 != file.length())
+		return false;
+
+	int counter = atoi(file.substr(npos + 1).c_str());
+	counter++;
+
+	std::string counterString = StringFromInt(counter);
+
+	if (counter < 10)
+		counterString = "0" + counterString;
+
+	currMovie = legalPathname + file.substr(0, npos + 1) + counterString + extension;
+
+	if (File::Exists(currMovie))
+	{
+		if (update)
+		{
+			if (cmp_currentMovie == cmp_leftMovie)
+				cmp_currentMovie = cmp_leftMovie = currMovie;
+			else
+				cmp_currentMovie = cmp_rightMovie = currMovie;
+		}
+
+		return true;
+	}
+
+	return false;
+}
+void CancelComparison()
+{
+	cmp_requested = false;
+	cmp_isRunning = false;
+	cmp_leftFinished = false;
+	cmp_rightFinished = false;
+	cmp_loadState = false;
+	cmp_movieFinished = false;
+	cmp_justFinished = false;
+	cmp_startTimerFrame = 0;
+	cmp_currentMovie = "";
+	cmp_currentBranch = "";
+	cmp_curentBranchFrame = 0;
+
+	SConfig::GetInstance().m_DumpFrames = false;
+	SConfig::GetInstance().m_DumpAudio = false;
+}
+bool SaveMemCard()
+{
+	return saveMemCard;
 }
 };

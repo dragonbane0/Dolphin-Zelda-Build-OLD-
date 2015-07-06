@@ -30,6 +30,8 @@
 //Dragonbane
 #include "DolphinWX/TPSavefileManager.h"
 #include "DolphinWX/TPLoadManager.h"
+#include "DolphinWX/TPVideoComparison.h"
+
 
 #if defined(HAVE_X11) && HAVE_X11
 #include "DolphinWX/X11Utils.h"
@@ -108,6 +110,7 @@ public:
 	//Dragonbane
 	TPSavefileManager* g_TPSaveFileManager;
 	TPLoadManager* g_TPLoadManager;
+	TPVideoComparison* g_TPVideoComparison;
 
 	void InitBitmaps();
 	void DoPause();
@@ -272,13 +275,16 @@ private:
 	void OnStop(wxCommandEvent& event);
 	void OnReset(wxCommandEvent& event);
 	void OnRecord(wxCommandEvent& event);
+	void OnStopRecord(wxCommandEvent& event); //Dragonbane
 	void OnPlayRecording(wxCommandEvent& event);
 	void OnRecordExport(wxCommandEvent& event);
 	void OnRecordReadOnly(wxCommandEvent& event);
+	void OnRecordVerify(wxCommandEvent& event); //Dragonbane
 	void OnTASInput(wxCommandEvent& event);
 	void OnTogglePauseMovie(wxCommandEvent& event);
 	void OnToggleDumpFrames(wxCommandEvent& event);
 	void OnToggleDumpAudio(wxCommandEvent& event);
+	void OnSetDumpPath(wxCommandEvent& event); //Dragonbane
 	void OnShowLag(wxCommandEvent& event);
 	void OnShowFrameCount(wxCommandEvent& event);
 	void OnShowInputDisplay(wxCommandEvent& event);
@@ -326,6 +332,7 @@ private:
 	void OnMemcard(wxCommandEvent& event); // Misc
 	void OnTPSave(wxCommandEvent& event); //Dragonbane
 	void OnTPLoad(wxCommandEvent& event); //Dragonbane
+	void OnTPVideoComparison(wxCommandEvent& event); //Dragonbane
 	void OnImportSave(wxCommandEvent& event);
 	void OnExportAllSaves(wxCommandEvent& event);
 

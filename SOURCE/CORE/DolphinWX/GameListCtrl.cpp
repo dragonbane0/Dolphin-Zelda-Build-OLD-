@@ -126,15 +126,17 @@ static int CompareGameListItems(const GameListItem* iso1, const GameListItem* is
 	switch (sortData)
 	{
 		case CGameListCtrl::COLUMN_TITLE:
-			if (!strcasecmp(iso1->GetName(indexOne).c_str(),iso2->GetName(indexOther).c_str()))
+			if (!strcasecmp(iso1->GetName(indexOne).c_str(), iso2->GetName(indexOther).c_str()))
 			{
-				if (iso1->IsDiscTwo())
-					return 1 * t;
-				else if (iso2->IsDiscTwo())
-					return -1 * t;
+				if (iso1->GetUniqueID() != iso2->GetUniqueID())
+					return t * (iso1->GetUniqueID() > iso2->GetUniqueID() ? 1 : -1);
+				if (iso1->GetRevision() != iso2->GetRevision())
+					return  t * (iso1->GetRevision() > iso2->GetRevision() ? 1 : -1);
+				if (iso1->IsDiscTwo() != iso2->IsDiscTwo())
+					return t * iso1->IsDiscTwo() ? 1 : -1;
 			}
 			return strcasecmp(iso1->GetName(indexOne).c_str(),
-					iso2->GetName(indexOther).c_str()) * t;
+				iso2->GetName(indexOther).c_str()) * t;
 		case CGameListCtrl::COLUMN_NOTES:
 			{
 				std::string cmp1 =
@@ -481,7 +483,15 @@ void CGameListCtrl::InsertItemInReportView(long _Index)
 		}
 	}
 
-	SetItem(_Index, COLUMN_TITLE, StrToWxStr(name), -1);
+	//Dragonbane: Better structure
+	std::string fullPath = rISOFile.GetFileName();
+
+	std::string Filename, LegalPathname, extension;
+	SplitPath(fullPath, &LegalPathname, &Filename, &extension);
+
+	std::string finalTitle = StringFromFormat("%s (%s)", name.c_str(), Filename.c_str());
+
+	SetItem(_Index, COLUMN_TITLE, StrToWxStr(finalTitle), -1);
 
 	// We show the company string on GameCube only
 	// On Wii we show the description instead as the company string is empty

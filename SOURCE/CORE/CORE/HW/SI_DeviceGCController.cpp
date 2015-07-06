@@ -5,6 +5,7 @@
 #include "Core/Core.h"
 #include "Core/CoreTiming.h"
 #include "Core/Movie.h"
+#include "Core/State.h"
 #include "Core/HW/EXI_Device.h"
 #include "Core/HW/EXI_DeviceMic.h"
 #include "Core/HW/GCPad.h"

@@ -346,7 +346,6 @@ void DolphinApp::AfterInit()
 			}
 		}
 	}
-
 	// First check if we have an exec command line.
 	else if (LoadFile && FileToLoad != wxEmptyString)
 	{

@@ -36,6 +36,8 @@ class TASInputDlg : public wxDialog
 		            long style = wxDEFAULT_DIALOG_STYLE | wxSTAY_ON_TOP);
 
 		void OnCloseWindow(wxCloseEvent& event);
+		void UpdateExtraButtons(bool check, bool uncheck); //Dragonbane
+		void UpdateFromButtons(wxCommandEvent& event); //Dragonbane
 		void UpdateFromSliders(wxCommandEvent& event);
 		void UpdateFromText(wxCommandEvent& event);
 		void OnMouseDownL(wxMouseEvent& event);
@@ -108,7 +110,10 @@ class TASInputDlg : public wxDialog
 		Button m_dpad_up, m_dpad_down, m_dpad_left, m_dpad_right;
 		Stick m_main_stick, m_c_stick;
 
-		Button* m_buttons[14];
+		//Dragonbane
+		Button m_reset, m_quickspin, m_rollassist, m_skipDialog;
+
+		Button* m_buttons[18]; //Original: 17
 		Control* m_controls[10];
 		static const int m_gc_pad_buttons_bitmask[12];
 		static const int m_wii_buttons_bitmask[13];
@@ -120,6 +125,13 @@ class TASInputDlg : public wxDialog
 		wxStaticBoxSizer* m_c_stick_szr;
 
 		bool m_has_layout = false;
+
+		//Dragonbane
+		int quickspin_timer = 0;
+		bool quickspin_enabled = false;
+
+		bool auto_dialog = false;
+		int dialog_timer = 0;
 
 		wxGridSizer* const m_buttons_dpad = new wxGridSizer(3);
 };

@@ -8,6 +8,11 @@
 
 #include "Common/CommonTypes.h"
 
+//Dragonbane
+#include <DolphinWX/MAIN.H>
+
+
+
 struct GCPadStatus;
 class PointerWrap;
 struct wiimote_key;
@@ -45,8 +50,10 @@ struct ControllerState
 	u8   TriggerL, TriggerR;               // Triggers, 16 bits
 	u8   AnalogStickX, AnalogStickY;       // Main Stick, 16 bits
 	u8   CStickX, CStickY;                 // Sub-Stick, 16 bits
+
+	float LinkX, LinkZ;					   //Dragonbane: Used to detect desyncs
 };
-static_assert(sizeof(ControllerState) == 8, "ControllerState should be 8 bytes");
+static_assert(sizeof(ControllerState) == 16, "ControllerState should be 16 bytes"); //Dragonbane
 #pragma pack(pop)
 
 // Global declarations
@@ -57,6 +64,37 @@ extern u64 g_currentFrame, g_totalFrames;
 extern u64 g_currentLagCount;
 extern u64 g_currentInputCount, g_totalInputCount;
 extern std::string g_discChange;
+
+extern bool justStoppedRecording; //Dragonbane
+
+extern bool updateMainFrame;
+
+//Dragonbane: Auto Roll Stuff
+extern int roll_timer;
+extern bool roll_enabled;
+extern bool first_roll;
+extern bool checkSave, uncheckSave;
+
+//Dragonbane: Video Comparison Stuff
+extern bool cmp_requested;
+extern bool cmp_isRunning;
+extern bool cmp_leftFinished;
+extern bool cmp_rightFinished;
+extern bool cmp_movieFinished;
+extern bool cmp_loadState;
+extern bool cmp_justFinished;
+extern std::string cmp_currentMovie;
+extern std::string cmp_leftMovie;
+extern std::string cmp_rightMovie;
+extern std::string cmp_leftTitle;
+extern std::string cmp_rightTitle;
+extern std::string cmp_outputPath;
+extern std::string cmp_currentBranch;
+extern int cmp_width;
+extern int cmp_height;
+extern u64 cmp_startTimerFrame;
+extern u64 cmp_curentBranchFrame;
+
 
 #pragma pack(push,1)
 struct DTMHeader
@@ -127,6 +165,21 @@ bool IsPlayingInput();
 bool IsMovieActive();
 bool IsReadOnly();
 u64  GetRecordingStartTime();
+
+//Dragonbane
+bool VerifyRecording(const std::string& moviename, const std::string& statename, bool fromStart);
+void CancelVerifying();
+void CancelRecording();
+bool IsAutoSave();
+bool SaveMemCard();
+bool IsMovieFromSaveState(const std::string& moviename);
+bool AutoVerify();
+void RequestVideoComparison(const std::string& leftMovie, const std::string& rightMovie, const std::string& leftMovieTitle, const std::string& rightMovieTitle, int width, int height, const std::string& savePath);
+bool StartVideoComparison();
+u64 GetDTMComparisonLength(const std::string& movie);
+void RenderComparisonVideo(bool schedule);
+bool GetNextComparisonMovie(bool update);
+void CancelComparison();
 
 bool IsConfigSaved();
 bool IsDualCore();
