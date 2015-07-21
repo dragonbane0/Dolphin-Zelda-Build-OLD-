@@ -110,6 +110,7 @@ enum
 	IDM_TPSAVE, //Dragonbane
 	IDM_TPLOAD, //Dragonbane
 	IDM_TPCOMPARE, //Dragonbane
+	IDM_SUPERSWIM, //Dragonbane
 	IDM_CHEATS,
 	IDM_NETPLAY,
 	IDM_RESTART,

@@ -45,13 +45,14 @@ struct ControllerState
 	bool L:1, R:1;                         // Binary triggers, 2 bits
 	bool disc:1;                           // Checks for disc being changed
 	bool reset:1;                          // Console reset button
-	bool reserved:2;                       // Reserved bits used for padding, 2 bits
+	bool loading:1;                        // Dragonbane: Loading status flag, 1 bit
+	bool reserved:1;                       // Reserved bits used for padding, 1 bit
 
 	u8   TriggerL, TriggerR;               // Triggers, 16 bits
 	u8   AnalogStickX, AnalogStickY;       // Main Stick, 16 bits
 	u8   CStickX, CStickY;                 // Sub-Stick, 16 bits
 
-	float LinkX, LinkZ;					   //Dragonbane: Used to detect desyncs
+	float LinkX, LinkZ;					   //Dragonbane: Used to detect desyncs, 64 bits
 };
 static_assert(sizeof(ControllerState) == 16, "ControllerState should be 16 bytes"); //Dragonbane
 #pragma pack(pop)
@@ -74,6 +75,12 @@ extern int roll_timer;
 extern bool roll_enabled;
 extern bool first_roll;
 extern bool checkSave, uncheckSave;
+
+//Dragonbane: Superswim Script
+extern bool swimStarted;
+extern bool swimInProgress;
+extern float swimDestPosX;
+extern float swimDestPosZ;
 
 //Dragonbane: Video Comparison Stuff
 extern bool cmp_requested;

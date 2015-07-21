@@ -61,6 +61,13 @@ bool autoSave = false;
 int desyncCount = 0;
 bool justStoppedRecording = false;
 
+//Load syncing from old DTMs (Legacy)
+bool nowLoading = false;
+u64 lastLoadByte = 0;
+u64 waitFrames = 0;
+bool waited = false;
+bool reverseWait = false;
+
 static bool saveMemCard = false;
 
 static std::string autoVerifyMovieFilename = File::GetUserPath(D_STATESAVES_IDX) + "AutoVerify.dtm";
@@ -73,6 +80,12 @@ bool roll_enabled = false;
 bool first_roll = false;
 bool checkSave = false;
 bool uncheckSave = false;
+
+//Dragonbane: Superswim Stuff
+bool swimStarted = false;
+bool swimInProgress = false;
+float swimDestPosX = 0.0f;
+float swimDestPosZ = 0.0f;
 
 
 //Dragonbane: Video Comparison Stuff
@@ -1342,12 +1355,47 @@ void CheckPadStatus(GCPadStatus* PadStatus, int controllerID)
 		u32 characterpointer = Memory::Read_U32(charPointerAddress);
 		u32 isLoading = Memory::Read_U32(isLoadingAdd);
 
+		if (isLoading > 0)
+			s_padState.loading = true;
+		else
+			s_padState.loading = false;
+
 		if (characterpointer > 0x80000000 && isLoading == 0)
 		{
 			characterpointer -= 0x80000000;
 
 			s_padState.LinkX = Memory::Read_F32(characterpointer);
 			s_padState.LinkZ = Memory::Read_F32(characterpointer + 0x8);
+		}
+	}
+
+
+	//TWW Stuff
+	bool isTWW = false;
+
+	if (!gameID.compare("GZLJ01"))
+	{
+		isLoadingAdd = 0x3ad335;
+
+		isTWW = true;
+	}
+
+	if (isTWW)
+	{
+		u8 isLoading = Memory::Read_U8(isLoadingAdd);
+
+		if (isLoading > 0)
+			s_padState.loading = true;
+		else
+			s_padState.loading = false;
+
+		if (isLoading == 0)
+		{
+			u32 XAdd = 0x3d78fc;
+			u32 ZAdd = 0x3d7904;
+			
+			s_padState.LinkX = Memory::Read_F32(XAdd);
+			s_padState.LinkZ = Memory::Read_F32(ZAdd);
 		}
 	}
 
@@ -1894,6 +1942,17 @@ void PlayController(GCPadStatus* PadStatus, int controllerID)
 		isTP = true;
 	}
 
+	//TWW Stuff
+	bool isTWW = false;
+
+	if (!gameID.compare("GZLJ01"))
+	{
+		isLoadingAdd = 0x3ad335;
+
+		isTWW = true;
+	}
+
+
 	/*
 	bool memoryUpdated = false;
 
@@ -1983,6 +2042,141 @@ void PlayController(GCPadStatus* PadStatus, int controllerID)
 		u32 characterpointer = Memory::Read_U32(charPointerAddress);
 		u32 isLoading = Memory::Read_U32(isLoadingAdd);
 
+
+		//1070
+		/*
+		//Legacy load times syncing
+		if (isLoading)
+		{
+			if (!nowLoading)
+			{
+				if (!s_padState.loading)
+					PanicAlertT("RIP");
+
+				if (s_padState.loading)
+				{
+					nowLoading = true;
+					lastLoadByte = s_currentByte - 16;
+				}
+			}
+		}
+		else
+		{
+			if (nowLoading)
+			{
+				nowLoading = false;
+				u64 saved = s_currentByte - 16;
+				u64 currDiff = ((s_currentByte - 16) - lastLoadByte) / 16;
+
+				s_currentByte = lastLoadByte;
+
+				bool movieLoading = true;
+
+				while (movieLoading)
+				{
+					memcpy(&s_padState, &(tmpInput[s_currentByte]), 16);
+					s_currentByte += 16;
+
+					movieLoading = s_padState.loading;
+				}
+
+				u64 recDiff = ((s_currentByte - 16) - lastLoadByte) / 16;
+
+				if (currDiff > recDiff)
+				{
+					int framesAdd = currDiff - recDiff;
+
+					g_totalFrames += framesAdd;
+				}
+				else if (currDiff < recDiff)
+				{
+					int framesAdd = recDiff - currDiff;
+					g_currentFrame += framesAdd;
+					//g_totalFrames += framesAdd;
+				}
+			}
+
+		}
+
+		if (!waited && g_currentFrame == 992) //After Memory card formatting delay
+		{
+			waitFrames = 1;
+			waited = true;
+			reverseWait = false;
+		}
+
+		if (g_currentFrame == 995)
+			waited = false;
+
+
+
+
+		if (!waited && g_currentFrame == 2989) //After BiT Void
+		{
+			waitFrames = 1;
+			waited = true;
+			reverseWait = false;
+		}
+
+		if (g_currentFrame == 2993)
+			waited = false;
+
+
+
+		if (!waited && g_currentFrame == 3193) //After Reset
+		{
+			waitFrames = 1;
+			waited = true;
+			reverseWait = false;
+		}
+
+		if (g_currentFrame == 3196)
+			waited = false;
+
+
+
+		
+		if (!waited && g_currentFrame == 3475) //After Faron Load
+		{
+			waitFrames = 2;
+			waited = true;
+			reverseWait = true;
+		}
+
+		if (g_currentFrame == 3490)
+			waited = false;
+			
+
+
+
+
+		if (waitFrames > 0)
+		{
+			if (reverseWait)
+			{
+				s_currentByte -= 16;
+
+				s_currentByte += waitFrames*16;
+
+				memcpy(&s_padState, &(tmpInput[s_currentByte]), 16);
+
+				s_currentByte += 16;
+
+				g_currentFrame += waitFrames;
+				waitFrames = 0;
+			}
+			else
+			{
+				g_currentFrame--;
+				waitFrames--;
+
+				s_currentByte -= 16;
+
+				memcpy(&s_padState, &(tmpInput[s_currentByte - 16]), 16);
+			}
+		}
+		*/
+
 		if (characterpointer > 0x80000000 && isLoading == 0)
 		{
 			characterpointer -= 0x80000000;
@@ -1993,6 +2187,7 @@ void PlayController(GCPadStatus* PadStatus, int controllerID)
 			if (s_padState.LinkX != LinkX || s_padState.LinkZ != LinkZ)
 			{
 				std::string message = StringFromFormat("Desync detected on frame: %d!", g_currentFrame);
+				//std::string message = StringFromFormat("Desync detected! ExpX: %f, ExpLoad: %i, CurrX: %f, CurrLoad: %i", s_padState.LinkX, s_padState.loading, LinkX, isLoading);
 				Core::DisplayMessage(message, 2000);
 
 				desyncCount += 1;
@@ -2044,6 +2239,30 @@ void PlayController(GCPadStatus* PadStatus, int controllerID)
 					return;
 				}
 				*/
+			}
+		}
+	}
+
+
+	//TWW Stuff
+	if (isTWW)
+	{
+		u8 isLoading = Memory::Read_U8(isLoadingAdd);
+
+		if (isLoading == 0)
+		{
+			u32 XAdd = 0x3d78fc;
+			u32 ZAdd = 0x3d7904;
+
+			float LinkX = Memory::Read_F32(XAdd);
+			float LinkZ = Memory::Read_F32(ZAdd);
+
+			if (s_padState.LinkX != LinkX || s_padState.LinkZ != LinkZ)
+			{
+				std::string message = StringFromFormat("Desync detected on frame: %d!", g_currentFrame);
+				Core::DisplayMessage(message, 2000);
+
+				desyncCount += 1;
 			}
 		}
 	}

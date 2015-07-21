@@ -31,6 +31,7 @@
 #include "DolphinWX/TPSavefileManager.h"
 #include "DolphinWX/TPLoadManager.h"
 #include "DolphinWX/TPVideoComparison.h"
+#include "DolphinWX/TWWSuperswim.h"
 
 
 #if defined(HAVE_X11) && HAVE_X11
@@ -111,6 +112,7 @@ public:
 	TPSavefileManager* g_TPSaveFileManager;
 	TPLoadManager* g_TPLoadManager;
 	TPVideoComparison* g_TPVideoComparison;
+	TWWSuperswim* g_TWWSuperswim;
 
 	void InitBitmaps();
 	void DoPause();
@@ -333,6 +335,7 @@ private:
 	void OnTPSave(wxCommandEvent& event); //Dragonbane
 	void OnTPLoad(wxCommandEvent& event); //Dragonbane
 	void OnTPVideoComparison(wxCommandEvent& event); //Dragonbane
+	void OnTWWSuperSwim(wxCommandEvent& event); //Dragonbane
 	void OnImportSave(wxCommandEvent& event);
 	void OnExportAllSaves(wxCommandEvent& event);
 

@@ -299,6 +299,7 @@ EVT_MENU(IDM_MEMCARD, CFrame::OnMemcard)
 EVT_MENU(IDM_TPSAVE, CFrame::OnTPSave) //Dragonbane
 EVT_MENU(IDM_TPLOAD, CFrame::OnTPLoad) //Dragonbane
 EVT_MENU(IDM_TPCOMPARE, CFrame::OnTPVideoComparison) //Dragonbane
+EVT_MENU(IDM_SUPERSWIM, CFrame::OnTWWSuperSwim) //Dragonbane
 EVT_MENU(IDM_IMPORT_SAVE, CFrame::OnImportSave)
 EVT_MENU(IDM_EXPORT_ALL_SAVE, CFrame::OnExportAllSaves)
 EVT_MENU(IDM_CHEATS, CFrame::OnShow_CheatsWindow)
@@ -448,6 +449,7 @@ CFrame::CFrame(wxFrame* parent,
 	g_TPSaveFileManager = new TPSavefileManager(this);
 	g_TPLoadManager = new TPLoadManager(this);
 	g_TPVideoComparison = new TPVideoComparison(this);
+	g_TWWSuperswim = new TWWSuperswim(this);
 	
 
 	for (int i = 0; i < 8; ++i)

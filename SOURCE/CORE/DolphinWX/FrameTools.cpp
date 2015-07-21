@@ -289,8 +289,17 @@ wxMenuBar* CFrame::CreateMenu()
 	wxMenu* tpMenu = new wxMenu;
 	tpMenu->Append(IDM_TPSAVE, "Savefile Manager");
 	tpMenu->Append(IDM_TPLOAD, "Load Area");
-	tpMenu->Append(IDM_TPCOMPARE, "Create Video Comparison");
-	menubar->Append(tpMenu, "TP");
+
+	wxMenu* twwMenu = new wxMenu;
+	twwMenu->Append(IDM_SUPERSWIM, "Superswim Script");
+
+	wxMenu* zeldaMenu = new wxMenu;
+	zeldaMenu->Append(IDM_TPCOMPARE, "Create Video Comparison");
+	zeldaMenu->AppendSeparator();
+	zeldaMenu->AppendSubMenu(tpMenu, "TP");
+	zeldaMenu->AppendSubMenu(twwMenu, "TWW");
+
+	menubar->Append(zeldaMenu, "Zelda");
 
 	wxMenu* viewMenu = new wxMenu;
 	viewMenu->AppendCheckItem(IDM_TOGGLE_TOOLBAR, _("Show &Toolbar"));
@@ -1717,6 +1726,10 @@ void CFrame::OnTPLoad(wxCommandEvent& WXUNUSED(event))
 void CFrame::OnTPVideoComparison(wxCommandEvent& WXUNUSED(event))
 {
 	g_TPVideoComparison->Show(true);
+}
+void CFrame::OnTWWSuperSwim(wxCommandEvent& WXUNUSED(event))
+{
+	g_TWWSuperswim->Show(true);
 }
 
 void CFrame::OnExportAllSaves(wxCommandEvent& WXUNUSED (event))
